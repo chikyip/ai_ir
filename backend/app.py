@@ -14,11 +14,15 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import threading
 from threading import Semaphore
-import msvcrt  # Windows file locking
 try:
-    import fcntl  # Linux file locking
+    import msvcrt  # Windows file locking
 except ImportError:
-    pass  # Will use Windows locking if fcntl not available
+    try:
+        import fcntl  # Unix file locking
+    except ImportError:
+        # Fallback for systems without either module
+        fcntl = None
+        print("Warning: No file locking available on this system")
 import functools
 from datetime import datetime
 import re
@@ -43,10 +47,8 @@ STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'stat
 
 @app.route('/')
 def serve_main_frontend():
-    # Serves index.html from c:\Users\chiky\irworkspace\ai_ir\static\
-    # Using an absolute path for clarity as requested.
-    # Alternatively, STATIC_DIR could be used if app.py's relative location is preferred.
-    return send_from_directory(r"c:\Users\chiky\irworkspace\ai_ir\static", "index.html")
+    # Serves index.html from the static directory
+    return send_from_directory(STATIC_DIR, "index.html")
 
 @app.route('/upload-and-process-pdfs', methods=['POST'])
 def upload_files():
@@ -582,6 +584,10 @@ def get_metadata():
         
     except Exception as e:
         return jsonify({"error": f"Failed to generate metadata: {str(e)}"}), 500
+
+@app.route('/test')
+def test_route():
+    return "Server is running", 200
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)  # Runs on http://localhost:5000

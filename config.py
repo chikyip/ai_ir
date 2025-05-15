@@ -1,6 +1,12 @@
-from secrets import API_KEY
+
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 API_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
+API_KEY = os.getenv('QWEN_API_KEY')  # Get API key from environment
 MODEL_NAME = "qwen-vl-max"
 
 # Move these constants and function before the route definitions

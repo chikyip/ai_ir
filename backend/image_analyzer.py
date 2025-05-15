@@ -3,16 +3,19 @@ import base64
 import json
 import time
 import requests
-import msvcrt  # Windows file locking
-from typing import Dict, Optional
+try:
+    import msvcrt  # Windows file locking
+except ImportError:
+    try:
+        import fcntl  # Unix file locking
+    except ImportError:
+        # Fallback for systems without either module
+        fcntl = None
+        print("Warning: No file locking available on this system")
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import API_URL, API_KEY, MODEL_NAME, QWEN_PROMPT
-
-try:
-    import fcntl  # Linux file locking
-except ImportError:
-    pass  # Will use Windows locking if fcntl not available
+from typing import Dict, Optional
 
 def analyze_image_with_qwen(image_path: str, file_info: Dict, request_semaphore) -> Optional[Dict]:
     """Send image to Qwen API for analysis and categorization."""

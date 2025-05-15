@@ -68,21 +68,31 @@ def upload_files():
         if not year: missing_fields.append("Year")
         return jsonify({"message": f"Missing required fields: {', '.join(missing_fields)}"}), 400
 
-    # Clear existing generated files for this client/report_type/year
+    # Clear existing generated files for matching client/report_type/year/filename
     base_dirs = [
         os.path.join(os.path.dirname(__file__), 'extracts', client, report_type, year),
-        os.path.join(os.path.dirname(__file__), 'jsons', client, report_type, year),
+        os.path.join(os.path.dirname(__file__), 'jsons', client, report_type, year), 
         os.path.join(os.path.dirname(__file__), 'processed', client, report_type, year)
     ]
+    
+    # Get list of filenames (without extension) from uploaded files
+    uploaded_filenames = [os.path.splitext(secure_filename(f.filename))[0] 
+                         for f in files if f and f.filename]
     
     for dir_path in base_dirs:
         if os.path.exists(dir_path):
             try:
-                import shutil
-                shutil.rmtree(dir_path)
-                print(f"Cleared existing directory: {dir_path}")
+                # Only remove directories matching uploaded filenames
+                for item in os.listdir(dir_path):
+                    item_path = os.path.join(dir_path, item)
+                    item_name = os.path.splitext(item)[0]  # Remove extension if any
+                    
+                    if os.path.isdir(item_path) and item_name in uploaded_filenames:
+                        import shutil
+                        shutil.rmtree(item_path)
+                        print(f"Cleared existing directory: {item_path}")
             except Exception as e:
-                print(f"Error clearing directory {dir_path}: {str(e)}")
+                print(f"Error clearing directories in {dir_path}: {str(e)}")
                 # Continue with upload even if cleanup fails
 
     if not files or (files[0] and files[0].filename == ''):
@@ -191,11 +201,13 @@ if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or os.environ.get('PRODUCTION_M
     print(f"Starting extracts observer with recursive=True")
     extracts_observer.start()
 
+# Initialize upload handler with recently_processed dictionary
+upload_handler = UploadHandler(UPLOAD_FOLDER)
+upload_handler.recently_processed = {}
+
 # Setup upload observer
-# Modified condition to run in both development and production modes
 if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or os.environ.get('PRODUCTION_MODE', 'false').lower() == 'true':
     upload_observer = Observer()
-    upload_handler = UploadHandler(UPLOAD_FOLDER)
     upload_observer.schedule(upload_handler, path=UPLOAD_FOLDER, recursive=True)
     upload_observer.start()
 

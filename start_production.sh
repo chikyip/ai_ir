@@ -14,9 +14,12 @@ pip install flask waitress watchdog pymupdf requests python-dotenv pillow
 # Change to the backend directory
 cd /home/chartnexus/ai_ir/backend
 
-# Create logs directory if it doesn't exist
-mkdir -p logs
-chmod 777 logs
+# Set proper permissions for uploads and extracts directories
+echo "Setting directory permissions..."
+sudo chmod -R 777 uploads
+sudo chmod -R 777 extracts
+sudo chmod -R 777 jsons
+sudo chmod -R 777 processed
 
 # Start the application in production mode in the background
 echo "Starting application in production mode on port 5001..."

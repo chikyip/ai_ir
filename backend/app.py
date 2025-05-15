@@ -148,7 +148,8 @@ print(f"Watching extracts directory: {extracts_dir}")
 extract_handler = ExtractHandler(request_semaphore)
 
 # Setup extracts observer with proper configuration
-if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+# Modified condition to run in both development and production modes
+if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or os.environ.get('PRODUCTION_MODE', 'false').lower() == 'true':
     extracts_observer = Observer()
     extracts_observer.schedule(
         extract_handler,
@@ -159,7 +160,8 @@ if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
     extracts_observer.start()
 
 # Setup upload observer
-if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+# Modified condition to run in both development and production modes
+if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or os.environ.get('PRODUCTION_MODE', 'false').lower() == 'true':
     upload_observer = Observer()
     upload_handler = UploadHandler(UPLOAD_FOLDER)
     upload_observer.schedule(upload_handler, path=UPLOAD_FOLDER, recursive=True)
@@ -664,7 +666,8 @@ def get_json_file():
 
 if __name__ == '__main__':
     # Process existing PDFs
-    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+    # Modified condition to run in both development and production modes
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or os.environ.get('PRODUCTION_MODE', 'false').lower() == 'true':
         threading.Thread(target=extract_handler.process_existing_pdfs, daemon=True).start()
     
     # Check if running in production mode
@@ -673,10 +676,10 @@ if __name__ == '__main__':
     if production_mode:
         # Use waitress for production (works well on Windows)
         from waitress import serve
-        port = 5001  # Always use port 5001 for production
+        port = int(os.environ.get('PORT', 5001))  # Get port from environment or default to 5001
         print(f"Starting server in PRODUCTION mode on port {port}")
-        # Process existing PDFs in production mode
-        threading.Thread(target=extract_handler.process_existing_pdfs, daemon=True).start()
+        # Remove this line as it's now handled above
+        # threading.Thread(target=extract_handler.process_existing_pdfs, daemon=True).start()
         serve(app, host='0.0.0.0', port=port, threads=8)
     else:
         # Development mode

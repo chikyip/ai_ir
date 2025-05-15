@@ -144,13 +144,14 @@ extracts_dir = os.path.join(os.path.dirname(__file__), 'extracts')
 os.makedirs(extracts_dir, exist_ok=True)
 print(f"Watching extracts directory: {extracts_dir}")
 
+# Initialize extract_handler regardless of environment
+extract_handler = ExtractHandler(request_semaphore)
+
 # Setup extracts observer with proper configuration
 if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
     extracts_observer = Observer()
-    # After initializing the ExtractHandler
-    extract_handler = ExtractHandler(request_semaphore)
     extracts_observer.schedule(
-        extract_handler,  # Changed from extracts_handler to extract_handler
+        extract_handler,
         path=extracts_dir,
         recursive=True
     )
@@ -590,9 +591,95 @@ def get_metadata():
 def test_route():
     return "Server is running", 200
 
+@app.route('/processed/<path:filename>')
+def serve_processed(filename):
+    processed_dir = os.path.join(os.path.dirname(__file__), 'processed')
+    return send_from_directory(processed_dir, filename)
+
+@app.route('/get-json', methods=['GET'])
+def get_json_file():
+    """Serve JSON files from the processed directory"""
+    try:
+        client = request.args.get('client')
+        report_type = request.args.get('report_type')
+        year = request.args.get('year')
+        pdf_name = request.args.get('pdf_name')
+        category = request.args.get('category')
+        
+        print(f"GET-JSON request received with params: client={client}, report_type={report_type}, year={year}, pdf_name={pdf_name}, category={category}")
+        
+        if not all([client, report_type, year, pdf_name, category]):
+            missing = [p for p, v in {'client': client, 'report_type': report_type, 'year': year, 'pdf_name': pdf_name, 'category': category}.items() if not v]
+            print(f"Missing parameters: {', '.join(missing)}")
+            return jsonify({"error": f"Missing required parameters: {', '.join(missing)}"}), 400
+            
+        # Construct the file path
+        json_path = os.path.join(
+            os.path.dirname(__file__), 
+            'processed', 
+            client, 
+            report_type, 
+            year, 
+            pdf_name, 
+            f"{category}.json"
+        )
+        
+        print(f"Looking for JSON file at: {json_path}")
+        
+        # Check if directory exists
+        dir_path = os.path.dirname(json_path)
+        if not os.path.exists(dir_path):
+            print(f"Directory does not exist: {dir_path}")
+            return jsonify({"error": f"Directory not found: {dir_path}"}), 404
+        
+        # List files in directory to help debug
+        print(f"Files in directory {dir_path}:")
+        if os.path.exists(dir_path):
+            for file in os.listdir(dir_path):
+                print(f"  - {file}")
+        
+        # Check if file exists
+        if not os.path.exists(json_path):
+            print(f"JSON file not found: {json_path}")
+            
+            # Try to find similar files
+            similar_files = [f for f in os.listdir(dir_path) if f.endswith('.json')]
+            if similar_files:
+                print(f"Found similar JSON files: {', '.join(similar_files)}")
+            
+            return jsonify({"error": f"JSON file not found: {json_path}"}), 404
+            
+        # Read and return the JSON file
+        print(f"Found JSON file, attempting to read: {json_path}")
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            print(f"Successfully read JSON file with {len(str(data))} characters")
+            return jsonify(data)
+            
+    except Exception as e:
+        import traceback
+        print(f"Error in get_json_file: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"error": f"Failed to retrieve JSON file: {str(e)}"}), 500
+
 if __name__ == '__main__':
     # Process existing PDFs
     if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         threading.Thread(target=extract_handler.process_existing_pdfs, daemon=True).start()
     
-    app.run(debug=True, port=5000)  # Runs on http://localhost:5000
+    # Check if running in production mode
+    production_mode = os.environ.get('PRODUCTION_MODE', 'false').lower() == 'true'
+    
+    if production_mode:
+        # Use waitress for production (works well on Windows)
+        from waitress import serve
+        port = 5001  # Always use port 5001 for production
+        print(f"Starting server in PRODUCTION mode on port {port}")
+        # Process existing PDFs in production mode
+        threading.Thread(target=extract_handler.process_existing_pdfs, daemon=True).start()
+        serve(app, host='0.0.0.0', port=port, threads=8)
+    else:
+        # Development mode
+        port = 5000  # Always use port 5000 for development
+        print(f"Starting server in DEVELOPMENT mode on port {port}")
+        app.run(debug=True, port=port, host='0.0.0.0')

@@ -52,3 +52,7 @@ pdf_images/
 
 # Add this line to your existing .gitignore
 secrets.py
+
+# Log files
+/backend/app.log
+*.log

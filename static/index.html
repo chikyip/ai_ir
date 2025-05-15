@@ -100,6 +100,15 @@
         </div>
 
         <!-- Results Section -->
+        <div id="results-container-category" class="">
+            <div class="card-header bg-white">
+                <h2 class="h5 mb-0">Results</h2>
+            </div>
+            <div class="card-body" id="results-content">
+                <!-- Results will be inserted here -->
+            </div>
+        </div>
+
         <div id="results-container" class="">
             <div class="card-header bg-white">
                 <h2 class="h5 mb-0">Results</h2>
@@ -318,6 +327,11 @@
                     option.textContent = category.split('_').map(word => 
                         word.charAt(0).toUpperCase() + word.slice(1)
                     ).join(' ');
+
+                     if (category === 'financial_highlights') {
+                        option.selected = true;
+                        financialHighlightsFound = true;
+                    }
                     categoryFilter.appendChild(option);
                 });
             }
@@ -434,29 +448,130 @@
                     const category = document.getElementById('category-filter').value; // Get selected category
             
                     if (client && reportType && years.length > 0) {
-                        const requestData = {
-                            client: client,
-                            report_type: reportType,
-                            years: years,
-                            categories: category ? [category] : [] // Include category if selected
-                        };
-            
-                        fetch('/query-results', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify(requestData)
-                        })
-                        .then(response => response.json())
-                        .then(data => {
-                            console.log('Query results:', data);
-                            displayQueryResults(data);
-                        })
-                        .catch(error => {
-                            console.error('Error fetching query results:', error);
-                        });
+                        // Special handling for any category to display raw JSON
+                        if (category) {
+                            // Get the first selected year
+                            const year = years[0];
+                            
+                            // Find the PDF name from metadata
+                            let pdfName = '';
+                            if (window.metadata && window.metadata.clients) {
+                                const clientData = window.metadata.clients.find(c => c.client_name === client);
+                                if (clientData && clientData.report_types[reportType] && 
+                                    clientData.report_types[reportType].years[year]) {
+                                    // Get the first PDF name available
+                                    pdfName = Object.keys(clientData.report_types[reportType].years[year])[0];
+                                }
+                            }
+                            
+                            if (pdfName) {
+                                // Format category name for file path (lowercase with underscores)
+                                const categoryFileName = category.toLowerCase().replace(/ /g, '_');
+                                
+                                const resultsContainer2 = document.getElementById('results-container-category');
+                                resultsContainer2.innerHTML = ``     
+                                // Use the /get-json endpoint instead of direct file access
+                                fetch(`/get-json?client=${client}&report_type=${reportType}&year=${year}&pdf_name=${pdfName}&category=${categoryFileName}`)
+                                    .then(response => {
+                                        if (!response.ok) {
+                                            throw new Error(`Failed to fetch ${category} data (${response.status})`);
+                                        }
+                                        return response.json();
+                                    })
+                                    .then(data => {
+                                         
+                                        // Format the category name for display (capitalize words)
+                                        const displayCategory = category.split('_')
+                                            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                                            .join(' ');
+                                        
+                                        resultsContainer2.innerHTML = `
+                                            <div class="card-header bg-white">
+                                                <h2 class="h5 mb-0">${displayCategory} JSON</h2>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="alert alert-info">
+                                                    Viewing raw JSON for: <strong>${client}/${reportType}/${year}/${pdfName}/${categoryFileName}.json</strong>
+                                                </div>
+                                                <pre class="bg-dark text-light p-3 rounded" style="overflow: auto; max-height: 600px;">${JSON.stringify(data, null, 2)}</pre>
+                                            </div>
+                                        `;
+                                        
+                                        // Try to extract and display the actual data from the nested structure
+                                        try {
+                                            if (data.choices && data.choices[0] && data.choices[0].message) {
+                                                const content = data.choices[0].message.content;
+                                                if (content.startsWith('```json') && content.endsWith('```')) {
+                                                    // Extract the JSON from the markdown code block
+                                                    const jsonStr = content.substring(7, content.length - 3).trim();
+                                                    const extractedData = JSON.parse(jsonStr);
+                                                    
+                                                    // Add the extracted data to the display
+                                                    const extractedDataElement = document.createElement('div');
+                                                    extractedDataElement.innerHTML = `
+                                                        <h4 class="mt-4">Extracted Data:</h4>
+                                                        <pre class="bg-dark text-light p-3 rounded" style="overflow: auto; max-height: 600px;">${JSON.stringify(extractedData, null, 2)}</pre>
+                                                    `;
+                                                    resultsContainer2.querySelector('.card-body').appendChild(extractedDataElement);
+                                                }
+                                            }
+
+                                            performRegularQuery(client, reportType, years, category);
+
+                                        } catch (e) {
+                                            console.error('Error extracting nested JSON:', e);
+                                        }
+                                    })
+                                    .catch(error => {
+                                        console.error(`Error fetching ${category} data:`, error);
+                                        const resultsContainer = document.getElementById('results-container');
+                                        resultsContainer.innerHTML = `
+                                            <div class="card-header bg-white">
+                                                <h2 class="h5 mb-0">Error</h2>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="alert alert-danger">
+                                                    Error loading ${category} data: ${error.message}
+                                                </div>
+                                            </div>
+                                        `;
+                                        
+                                        // Fall back to regular query if the direct JSON fetch fails
+                                        performRegularQuery(client, reportType, years, category);
+                                    });
+                                return; // Skip the regular query
+                            }
+                        }
+                        
+                        // Regular query for when no category is selected or PDF name couldn't be found
+                        performRegularQuery(client, reportType, years, category);
                     }
+                }
+            
+                // Helper function to perform the regular query
+                function performRegularQuery(client, reportType, years, category) {
+                    const requestData = {
+                        client: client,
+                        report_type: reportType,
+                        years: years,
+                        categories: category ? [category] : [] // Include category if selected
+                    };
+            
+                    fetch('/query-results', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(requestData)
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Query results:', data);
+                        displayQueryResults(data);
+                    })
+                    .catch(error => {
+                        console.error('Error fetching query results:', error);
+                    });
                 }
             
                 function displayQueryResults(data) {
@@ -725,6 +840,6 @@
             }
         });
     </script>
-    <div id="results-container" class="results-container container"></div>
+
 </body>
 </html>

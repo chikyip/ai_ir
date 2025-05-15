@@ -163,6 +163,16 @@ class ExtractHandler(FileSystemEventHandler):
                 pdf_name
             )
             
+            # Check for processed directory
+            processed_dir = os.path.join(
+                os.path.dirname(__file__),
+                'processed',
+                client,
+                report_type,
+                year,
+                pdf_name
+            )
+            
             if not os.path.exists(extracts_dir):
                 print(f"Extracts directory not found for {pdf_key}")
                 return
@@ -177,20 +187,33 @@ class ExtractHandler(FileSystemEventHandler):
                 json_count = sum(1 for root, dirs, files in os.walk(jsons_dir) 
                                 for f in files if f.endswith('.json'))
             
+            # Check if category files exist in processed directory
+            category_files_exist = False
+            if os.path.exists(processed_dir):
+                category_files = [f for f in os.listdir(processed_dir) if f.endswith('.json')]
+                category_files_exist = len(category_files) > 0
+                
             print(f"Found {image_count} images and {json_count} JSON files for {pdf_key}")
+            print(f"Category files exist: {category_files_exist}")
             
-            # If all images have corresponding JSON files, process categories
-            if image_count > 0 and json_count >= image_count:
-                print(f"All pages processed for {pdf_key}, running category processing")
+            # If all images have corresponding JSON files and category files don't exist, process categories
+            if image_count > 0 and json_count >= image_count and not category_files_exist:
+                print(f"All pages processed for {pdf_key} and category files missing, running category processing")
                 self._process_categories(client, report_type, year, pdf_name)
             else:
-                # Schedule another check if not complete
-                print(f"Processing not complete for {pdf_key} ({json_count}/{image_count}), scheduling another check")
-                timer = threading.Timer(30.0, self._check_processing_complete, 
-                                       [client, report_type, year, pdf_name])
-                timer.daemon = True
-                self.pdf_tracking[pdf_key] = timer
-                timer.start()
+                if category_files_exist:
+                    print(f"Category files already exist for {pdf_key}, skipping processing")
+                    # Remove from tracking since it's already processed
+                    if pdf_key in self.pdf_tracking:
+                        del self.pdf_tracking[pdf_key]
+                else:
+                    # Schedule another check if not complete
+                    print(f"Processing not complete for {pdf_key} ({json_count}/{image_count}), scheduling another check")
+                    timer = threading.Timer(30.0, self._check_processing_complete, 
+                                           [client, report_type, year, pdf_name])
+                    timer.daemon = True
+                    self.pdf_tracking[pdf_key] = timer
+                    timer.start()
         except Exception as e:
             print(f"Error checking processing completion: {str(e)}")
     

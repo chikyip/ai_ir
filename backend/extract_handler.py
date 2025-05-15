@@ -2,6 +2,7 @@ import os
 import time
 import threading
 import re
+import subprocess
 from watchdog.events import FileSystemEventHandler
 from image_analyzer import analyze_image_with_qwen
 
@@ -18,6 +19,7 @@ class ExtractHandler(FileSystemEventHandler):
         self.event_timestamps = []  # Track recent event times
         self.event_rate_semaphore = threading.Semaphore(MAX_EVENT_RATE)
         self.request_semaphore = request_semaphore
+        self.pdf_tracking = {}  # Track PDF processing status
 
     def _throttle_events(self):
         """Ensure we don't process too many events too quickly"""
@@ -87,7 +89,7 @@ class ExtractHandler(FileSystemEventHandler):
                 client = path_parts[0]
                 report_type = path_parts[1]
                 year = path_parts[2]
-                # filename = path_parts[3]  # Not needed in file_info
+                pdf_name = path_parts[3]
                 
                 # Validate year format
                 if not year.isdigit():
@@ -95,7 +97,7 @@ class ExtractHandler(FileSystemEventHandler):
                     return
                     
                 file_info = {
-                    'filename': path_parts[3],
+                    'filename': pdf_name,
                     'path': event.src_path,
                     'client': client,
                     'report_type': report_type,
@@ -106,6 +108,9 @@ class ExtractHandler(FileSystemEventHandler):
                 analyze_image_with_qwen(event.src_path, file_info, self.request_semaphore)
                 print(f"Completed Qwen analysis for image: {event.src_path}")
                 
+                # Schedule a check to see if all pages are processed
+                self._schedule_completion_check(client, report_type, year, pdf_name)
+                
             else:
                 print(f"Unexpected path structure for image: {rel_path}")
                 
@@ -115,3 +120,168 @@ class ExtractHandler(FileSystemEventHandler):
             with self.lock:
                 self.processing_images.remove(event.src_path)
                 print(f"Processing complete and lock released for: {event.src_path}")
+    
+    def _schedule_completion_check(self, client, report_type, year, pdf_name):
+        """Schedule a check to see if all pages have been processed"""
+        pdf_key = f"{client}/{report_type}/{year}/{pdf_name}"
+        
+        # Cancel any existing timer for this PDF
+        if pdf_key in self.pdf_tracking:
+            self.pdf_tracking[pdf_key].cancel()
+        
+        # Create a new timer to check completion
+        timer = threading.Timer(30.0, self._check_processing_complete, 
+                               [client, report_type, year, pdf_name])
+        timer.daemon = True
+        self.pdf_tracking[pdf_key] = timer
+        timer.start()
+        print(f"Scheduled completion check for {pdf_key} in 30 seconds")
+    
+    def _check_processing_complete(self, client, report_type, year, pdf_name):
+        """Check if all pages have been processed and run category processing if so"""
+        try:
+            pdf_key = f"{client}/{report_type}/{year}/{pdf_name}"
+            print(f"Checking if processing is complete for {pdf_key}")
+            
+            # Count images in extracts directory
+            extracts_dir = os.path.join(
+                os.path.dirname(__file__),
+                'extracts',
+                client,
+                report_type,
+                year,
+                pdf_name
+            )
+            
+            # Count JSON files in jsons directory
+            jsons_dir = os.path.join(
+                os.path.dirname(__file__),
+                'jsons',
+                client,
+                report_type,
+                year,
+                pdf_name
+            )
+            
+            if not os.path.exists(extracts_dir):
+                print(f"Extracts directory not found for {pdf_key}")
+                return
+                
+            # Count image files
+            image_count = sum(1 for root, dirs, files in os.walk(extracts_dir) 
+                             for f in files if f.lower().endswith(('.jpg', '.jpeg', '.png')))
+            
+            # Count JSON files
+            json_count = 0
+            if os.path.exists(jsons_dir):
+                json_count = sum(1 for root, dirs, files in os.walk(jsons_dir) 
+                                for f in files if f.endswith('.json'))
+            
+            print(f"Found {image_count} images and {json_count} JSON files for {pdf_key}")
+            
+            # If all images have corresponding JSON files, process categories
+            if image_count > 0 and json_count >= image_count:
+                print(f"All pages processed for {pdf_key}, running category processing")
+                self._process_categories(client, report_type, year, pdf_name)
+            else:
+                # Schedule another check if not complete
+                print(f"Processing not complete for {pdf_key} ({json_count}/{image_count}), scheduling another check")
+                timer = threading.Timer(30.0, self._check_processing_complete, 
+                                       [client, report_type, year, pdf_name])
+                timer.daemon = True
+                self.pdf_tracking[pdf_key] = timer
+                timer.start()
+        except Exception as e:
+            print(f"Error checking processing completion: {str(e)}")
+    
+    def _process_categories(self, client, report_type, year, pdf_name):
+        """Run the process_categories.py script for the completed PDF"""
+        try:
+            print(f"Starting category processing for {client}/{report_type}/{year}/{pdf_name}")
+            
+            # Construct the command to run process_categories.py
+            cmd = [
+                "python3",
+                os.path.join(os.path.dirname(__file__), "process_categories.py"),
+                client,
+                report_type,
+                year,
+                pdf_name
+            ]
+            
+            # Run the process with proper output handling
+            process = subprocess.Popen(
+                cmd,
+                cwd=os.path.dirname(__file__),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1
+            )
+            
+            # Create threads to read output (prevents hanging)
+            def read_output(pipe, prefix):
+                for line in iter(pipe.readline, ''):
+                    if line:
+                        print(f"{prefix}: {line.strip()}")
+                
+            stdout_thread = threading.Thread(target=read_output, args=(process.stdout, "CATEGORY_STDOUT"))
+            stderr_thread = threading.Thread(target=read_output, args=(process.stderr, "CATEGORY_STDERR"))
+            stdout_thread.daemon = True
+            stderr_thread.daemon = True
+            stdout_thread.start()
+            stderr_thread.start()
+            
+            print(f"Category processing initiated for {client}/{report_type}/{year}/{pdf_name}")
+            
+            # Remove from tracking
+            pdf_key = f"{client}/{report_type}/{year}/{pdf_name}"
+            if pdf_key in self.pdf_tracking:
+                del self.pdf_tracking[pdf_key]
+                
+        except Exception as e:
+            print(f"Error starting category processing: {str(e)}")
+
+    # Add this method to the ExtractHandler class
+    def process_existing_pdfs(self):
+        """Process categories for PDFs that have already been analyzed"""
+        try:
+            print("Checking for already processed PDFs that need category processing")
+            extracts_dir = os.path.join(os.path.dirname(__file__), 'extracts')
+            jsons_dir = os.path.join(os.path.dirname(__file__), 'jsons')
+            
+            # Walk through the extracts directory to find all PDFs
+            for client in os.listdir(extracts_dir):
+                client_path = os.path.join(extracts_dir, client)
+                if not os.path.isdir(client_path):
+                    continue
+                    
+                for report_type in os.listdir(client_path):
+                    report_path = os.path.join(client_path, report_type)
+                    if not os.path.isdir(report_path):
+                        continue
+                        
+                    for year in os.listdir(report_path):
+                        year_path = os.path.join(report_path, year)
+                        if not os.path.isdir(year_path) or not year.isdigit():
+                            continue
+                            
+                        for pdf_name in os.listdir(year_path):
+                            pdf_path = os.path.join(year_path, pdf_name)
+                            if not os.path.isdir(pdf_path):
+                                continue
+                                
+                            # Check if this PDF has already been analyzed
+                            pdf_key = f"{client}/{report_type}/{year}/{pdf_name}"
+                            
+                            # Skip if already being tracked
+                            if hasattr(self, 'pdf_tracking') and pdf_key in self.pdf_tracking:
+                                continue
+                                
+                            # Schedule a completion check for this PDF
+                            print(f"Scheduling check for existing PDF: {pdf_key}")
+                            self._schedule_completion_check(client, report_type, year, pdf_name)
+                            
+            print("Finished scheduling checks for existing PDFs")
+        except Exception as e:
+            print(f"Error processing existing PDFs: {str(e)}")

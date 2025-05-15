@@ -147,9 +147,10 @@ print(f"Watching extracts directory: {extracts_dir}")
 # Setup extracts observer with proper configuration
 if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
     extracts_observer = Observer()
-    extracts_handler = ExtractHandler(request_semaphore)
+    # After initializing the ExtractHandler
+    extract_handler = ExtractHandler(request_semaphore)
     extracts_observer.schedule(
-        extracts_handler,
+        extract_handler,  # Changed from extracts_handler to extract_handler
         path=extracts_dir,
         recursive=True
     )
@@ -590,4 +591,8 @@ def test_route():
     return "Server is running", 200
 
 if __name__ == '__main__':
+    # Process existing PDFs
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        threading.Thread(target=extract_handler.process_existing_pdfs, daemon=True).start()
+    
     app.run(debug=True, port=5000)  # Runs on http://localhost:5000

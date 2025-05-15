@@ -58,17 +58,20 @@
                     <input type="file" id="fileInput" class="d-none" accept=".pdf" multiple>
                 </div>
 
-                <!-- Processing status -->
-                <div class="alert alert-info" id="processingStatus">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span id="statusText">Processing documents...</span>
-                        <span class="badge bg-primary rounded-pill" id="fileCount">0 files</span>
+                <!-- Add this right after your upload area -->
+                <div id="upload-progress-container" class="mt-3" style="display: none;">
+                    <div class="progress mb-2" style="height: 20px;">
+                        <div id="upload-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                            role="progressbar" style="width: 0%"></div>
                     </div>
-                    <div class="progress">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated" id="statusBar" style="width: 0%"></div>
+                    <div class="d-flex justify-content-between">
+                        <small id="upload-status-text">Preparing upload...</small>
+                        <small id="upload-percentage">0%</small>
                     </div>
-                    <small class="text-muted d-block mt-2" id="statusDetails">Preparing files...</small>
+                    <div id="current-file-info" class="small text-muted mt-1"></div>
+                    <div id="upload-errors" class="alert alert-danger mt-2" style="display: none;"></div>
                 </div>
+
             </div>
         </div>
 
@@ -389,47 +392,82 @@
                     fileInput.addEventListener('change', handleFileUpload);
                 
                     function handleFileUpload() {
-                        const files = fileInput.files;
-                        if (!files || files.length === 0) return;
-                    
-                        processingStatus.style.display = 'block';
-                        document.getElementById('statusText').textContent = 'Processing documents...';
-                        document.getElementById('fileCount').textContent = `${files.length} files`;
-                        document.getElementById('statusBar').style.width = '0%';
-                        document.getElementById('statusDetails').textContent = 'Preparing files...';
-                    
+                        const files = document.getElementById('fileInput').files;
+                        if (!files || files.length === 0) {
+                            alert('Please select at least one file');
+                            return;
+                        }
+
+                        // Get form values
+                        const client = document.getElementById('upload-client-input').value;
+                        const reportType = document.getElementById('upload-report-type-input').value;
+                        const year = document.getElementById('upload-document-year').value;
+
+                        // Validate required fields
+                        if (!client || !reportType || !year) {
+                            alert('Please fill in all required fields (Client, Report Type, Year)');
+                            return;
+                        }
+
+                        // Show progress UI
+                        document.getElementById('upload-progress-container').style.display = 'block';
+                        document.getElementById('upload-status-text').textContent = 'Starting upload...';
+                        document.getElementById('upload-progress-bar').style.width = '0%';
+
                         const formData = new FormData();
-                        formData.append('client', document.getElementById('upload-client-input').value);
-                        formData.append('report_type', document.getElementById('upload-report-type-input').value);
-                        formData.append('year', document.getElementById('upload-document-year').value);
+                        formData.append('client', client);
+                        formData.append('report_type', reportType);
+                        formData.append('year', year);
                         
                         for (let i = 0; i < files.length; i++) {
                             formData.append('pdf_files', files[i]);
                         }
-                    
-                        fetch('/upload-and-process-pdfs', {
-                            method: 'POST',
-                            body: formData
-                        })
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.message) {
-                                document.getElementById('statusText').textContent = data.message;
+
+                        const xhr = new XMLHttpRequest();
+                        
+                        xhr.upload.onprogress = function(e) {
+                            if (e.lengthComputable) {
+                                const percentComplete = Math.round((e.loaded / e.total) * 100);
+                                document.getElementById('upload-progress-bar').style.width = percentComplete + '%';
+                                document.getElementById('upload-percentage').textContent = percentComplete + '%';
+                                document.getElementById('upload-status-text').textContent = `Uploading ${files.length} files...`;
                             }
-                            if (data.uploaded_files) {
-                                document.getElementById('statusDetails').textContent = 
-                                    `Successfully processed ${data.uploaded_files.length} files`;
-                                document.getElementById('statusBar').style.width = '100%';
+                        };
+
+                        xhr.onload = function() {
+                            if (xhr.status === 200) {
+                                const response = JSON.parse(xhr.responseText);
+                                if (response.errors && response.errors.length > 0) {
+                                    document.getElementById('upload-errors').style.display = 'block';
+                                    document.getElementById('upload-errors').innerHTML = 
+                                        response.errors.map(err => `<div>${err}</div>`).join('');
+                                }
+                                document.getElementById('upload-status-text').textContent = 'Upload complete!';
+                                document.getElementById('upload-progress-bar').classList.remove('progress-bar-animated');
+                                document.getElementById('upload-progress-bar').classList.add('bg-success');
+                                
+                                // Refresh results after 1 second
+                                setTimeout(() => fetchQueryResults(), 1000);
+                            } else {
+                                document.getElementById('upload-status-text').textContent = 'Upload failed';
+                                document.getElementById('upload-progress-bar').classList.remove('progress-bar-animated');
+                                document.getElementById('upload-progress-bar').classList.add('bg-danger');
+                                document.getElementById('upload-errors').style.display = 'block';
+                                document.getElementById('upload-errors').textContent = 
+                                    'Error: ' + (xhr.responseText || xhr.statusText);
                             }
-                            if (data.errors && data.errors.length > 0) {
-                                console.error('Upload errors:', data.errors);
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Upload error:', error);
-                            document.getElementById('statusText').textContent = 'Upload failed';
-                            document.getElementById('statusDetails').textContent = error.message;
-                        });
+                        };
+
+                        xhr.onerror = function() {
+                            document.getElementById('upload-status-text').textContent = 'Upload failed';
+                            document.getElementById('upload-progress-bar').classList.remove('progress-bar-animated');
+                            document.getElementById('upload-progress-bar').classList.add('bg-danger');
+                            document.getElementById('upload-errors').style.display = 'block';
+                            document.getElementById('upload-errors').textContent = 'Network error occurred during upload';
+                        };
+
+                        xhr.open('POST', '/upload-and-process-pdfs', true);
+                        xhr.send(formData);
                     }
                 }
             

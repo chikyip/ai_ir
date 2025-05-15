@@ -683,3 +683,20 @@ select {
 .view-json-btn i {
     font-size: 1rem;
 }
+
+/* Progress bar styling */
+#upload-progress-container {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 5px;
+    border: 1px solid #dee2e6;
+}
+
+.progress-bar-animated {
+    transition: width 0.3s ease;
+}
+
+#upload-errors {
+    max-height: 150px;
+    overflow-y: auto;
+}

@@ -68,17 +68,43 @@ def upload_files():
         if not year: missing_fields.append("Year")
         return jsonify({"message": f"Missing required fields: {', '.join(missing_fields)}"}), 400
 
+    # Clear existing generated files for this client/report_type/year
+    base_dirs = [
+        os.path.join(os.path.dirname(__file__), 'extracts', client, report_type, year),
+        os.path.join(os.path.dirname(__file__), 'jsons', client, report_type, year),
+        os.path.join(os.path.dirname(__file__), 'processed', client, report_type, year)
+    ]
+    
+    for dir_path in base_dirs:
+        if os.path.exists(dir_path):
+            try:
+                import shutil
+                shutil.rmtree(dir_path)
+                print(f"Cleared existing directory: {dir_path}")
+            except Exception as e:
+                print(f"Error clearing directory {dir_path}: {str(e)}")
+                # Continue with upload even if cleanup fails
+
     if not files or (files[0] and files[0].filename == ''):
         return jsonify({"message": "No selected files"}), 400
+
+    # Create a progress tracking dictionary
+    upload_progress = {
+        'total': len(files),
+        'completed': 0,
+        'current_file': None,
+        'errors': []
+    }
 
     saved_files_info = []
     errors = []
 
     # Save all files first
-    for file in files:
+    for i, file in enumerate(files):
         if file and file.filename:
             original_filename = file.filename
             filename = secure_filename(original_filename)
+            upload_progress['current_file'] = original_filename
 
             if not filename:
                 errors.append(f"Invalid or empty filename after sanitization for '{original_filename}'.")
@@ -90,7 +116,11 @@ def upload_files():
                 os.makedirs(target_directory, exist_ok=True)
                 save_path = os.path.join(target_directory, filename)
                 
+                # Save the file
                 file.save(save_path)
+                
+                # Update progress
+                upload_progress['completed'] = i + 1
                 saved_files_info.append({
                     "filename": filename,
                     "original_filename": original_filename,
@@ -104,8 +134,10 @@ def upload_files():
                 error_message = f"Error saving file '{original_filename}': {str(e)}"
                 print(error_message)
                 errors.append(error_message)
+                upload_progress['errors'].append(error_message)
         elif file and not file.filename:
             errors.append("A file was provided without a filename.")
+            upload_progress['errors'].append("A file was provided without a filename.")
 
     if errors and not saved_files_info:
         return jsonify({"message": "All file uploads failed.", "errors": errors}), 500
@@ -663,6 +695,15 @@ def get_json_file():
         print(f"Error in get_json_file: {str(e)}")
         print(traceback.format_exc())
         return jsonify({"error": f"Failed to retrieve JSON file: {str(e)}"}), 500
+
+# Add this near other route definitions
+@app.route('/upload-progress', methods=['GET'])
+def upload_progress():
+    # In a real implementation, you'd want to track progress per session/user
+    # This is a simplified version - you may need to implement proper session tracking
+    return jsonify({
+        'progress': upload_progress  # This would come from your progress tracking implementation
+    })
 
 if __name__ == '__main__':
     # Process existing PDFs

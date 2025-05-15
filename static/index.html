@@ -482,107 +482,134 @@
                     const client = document.getElementById('client-filter').value;
                     const reportType = document.getElementById('report-type-filter').value;
                     const yearCheckboxes = Array.from(document.querySelectorAll('.checkbox-group input[name="year"]:checked'));
+                    const category = document.getElementById('category-filter').value;  // <-- Add this line
+                    
+                    // Replace single year with all selected years
                     const years = yearCheckboxes.map(checkbox => checkbox.value);
-                    const category = document.getElementById('category-filter').value; // Get selected category
-            
-                    if (client && reportType && years.length > 0) {
-                        // Special handling for any category to display raw JSON
-                        if (category) {
-                            // Get the first selected year
-                            const year = years[0];
+                    
+                    if (window.metadata && window.metadata.clients) {
+                        const clientData = window.metadata.clients.find(c => c.client_name === client);
+                        
+                        if (clientData && clientData.report_types[reportType] && category) {
+                            const resultsContainer2 = document.getElementById('results-container-category');
+                            resultsContainer2.innerHTML = ``;
                             
-                            // Find the PDF name from metadata
-                            let pdfName = '';
-                            if (window.metadata && window.metadata.clients) {
-                                const clientData = window.metadata.clients.find(c => c.client_name === client);
-                                if (clientData && clientData.report_types[reportType] && 
-                                    clientData.report_types[reportType].years[year]) {
-                                    // Get the first PDF name available
+                            // Create a counter to track when all requests are complete
+                            let completedRequests = 0;
+                            let allResults = [];
+                            
+                            // Process each year
+                            years.forEach(year => {
+                                // Get the PDF name for this specific year
+                                let pdfName = '';
+                                if (clientData.report_types[reportType].years[year]) {
                                     pdfName = Object.keys(clientData.report_types[reportType].years[year])[0];
                                 }
-                            }
-                            
-                            if (pdfName) {
-                                // Format category name for file path (lowercase with underscores)
-                                const categoryFileName = category.toLowerCase().replace(/ /g, '_');
                                 
-                                const resultsContainer2 = document.getElementById('results-container-category');
-                                resultsContainer2.innerHTML = ``     
-                                // Use the /get-json endpoint instead of direct file access
-                                fetch(`/get-json?client=${client}&report_type=${reportType}&year=${year}&pdf_name=${pdfName}&category=${categoryFileName}`)
-                                    .then(response => {
-                                        if (!response.ok) {
-                                            throw new Error(`Failed to fetch ${category} data (${response.status})`);
-                                        }
-                                        return response.json();
-                                    })
-                                    .then(data => {
-                                         
-                                        // Format the category name for display (capitalize words)
-                                        const displayCategory = category.split('_')
-                                            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                                            .join(' ');
-                                        
-                                        resultsContainer2.innerHTML = `
-                                            <div class="card-header bg-white">
-                                                <h2 class="h5 mb-0">${displayCategory} JSON</h2>
-                                            </div>
-                                            <div class="card-body">
-                                                <div class="alert alert-info">
-                                                    Viewing raw JSON for: <strong>${client}/${reportType}/${year}/${pdfName}/${categoryFileName}.json</strong>
-                                                </div>
-                                                <pre class="bg-dark text-light p-3 rounded" style="overflow: auto; max-height: 600px;">${JSON.stringify(data, null, 2)}</pre>
-                                            </div>
-                                        `;
-                                        
-                                        // Try to extract and display the actual data from the nested structure
-                                        try {
-                                            if (data.choices && data.choices[0] && data.choices[0].message) {
-                                                const content = data.choices[0].message.content;
-                                                if (content.startsWith('```json') && content.endsWith('```')) {
-                                                    // Extract the JSON from the markdown code block
-                                                    const jsonStr = content.substring(7, content.length - 3).trim();
-                                                    const extractedData = JSON.parse(jsonStr);
-                                                    
-                                                    // Add the extracted data to the display
-                                                    const extractedDataElement = document.createElement('div');
-                                                    extractedDataElement.innerHTML = `
-                                                        <h4 class="mt-4">Extracted Data:</h4>
-                                                        <pre class="bg-dark text-light p-3 rounded" style="overflow: auto; max-height: 600px;">${JSON.stringify(extractedData, null, 2)}</pre>
-                                                    `;
-                                                    resultsContainer2.querySelector('.card-body').appendChild(extractedDataElement);
-                                                }
+                                if (pdfName) {
+                                    // Format category name for file path (lowercase with underscores)
+                                    const categoryFileName = category.toLowerCase().replace(/ /g, '_');
+                                    
+                                    // Use the /get-json endpoint with the updated parameter name
+                                    fetch(`/get-json?client=${client}&report_type=${reportType}&year=${year}&pdf_name=${pdfName}&category=${categoryFileName}`)
+                                        .then(response => {
+                                            if (!response.ok) {
+                                                throw new Error(`Failed to fetch ${category} data for ${year} (${response.status})`);
                                             }
-
-                                            performRegularQuery(client, reportType, years, category);
-
-                                        } catch (e) {
-                                            console.error('Error extracting nested JSON:', e);
+                                            return response.json();
+                                        })
+                                        .then(data => {
+                                            // Add year information to the data
+                                            data.year = year;
+                                            allResults.push(data);
+                                            
+                                            completedRequests++;
+                                            
+                                            // When all requests are complete, display the results
+                                            if (completedRequests === years.length) {
+                                                displayAllYearResults(allResults, client, reportType, years, category, categoryFileName);
+                                            }
+                                        })
+                                        .catch(error => {
+                                            console.error(`Error fetching ${category} data for ${year}:`, error);
+                                            completedRequests++;
+                                            
+                                            // When all requests are complete, display the results
+                                            if (completedRequests === years.length) {
+                                                displayAllYearResults(allResults, client, reportType, years, category, categoryFileName);
+                                            }
+                                        });
+                                } else {
+                                    completedRequests++;
+                                    if (completedRequests === years.length) {
+                                        displayAllYearResults(allResults, client, reportType, years, category, categoryFileName);
+                                    }
+                                }
+                            });
+                            
+                            // Update display function to remove pdfName parameter since we don't need it anymore
+                            // In the displayAllYearResults function, modify the path display logic:
+                            function displayAllYearResults(results, client, reportType, years, category, categoryFileName) {
+                                // Format the category name for display (capitalize words)
+                                const displayCategory = category.split('_')
+                                    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                                    .join(' ');
+                                
+                                // Get pdfName from first result if available, otherwise omit it from path
+                                const pdfName = results.length > 0 && results[0].filename ? 
+                                    results[0].filename.replace('.pdf', '') + '/' : 
+                                    '';
+                                resultsContainer2.innerHTML = `
+                                    <div class="card-header bg-white">
+                                        <h2 class="h5 mb-0">${displayCategory} JSON</h2>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="alert alert-info">
+                                            Viewing raw JSON for: <strong>${client}/${reportType}/${years.join(', ')}/${pdfName}${categoryFileName}.json</strong>
+                                        </div>
+                                    </div>
+                                `;
+                                
+                                const cardBody = resultsContainer2.querySelector('.card-body');
+                                
+                                // Display each year's results
+                                results.forEach(data => {
+                                    const yearSection = document.createElement('div');
+                                    yearSection.className = 'year-section mb-4';
+                                    yearSection.innerHTML = `
+                                        <h3 class="h6 mb-2">Year: ${data.year}</h3>
+                                        <pre class="bg-dark text-light p-3 rounded d-none" style="overflow: auto; max-height: 600px;">${JSON.stringify(data, null, 2)}</pre>
+                                    `;
+                                    
+                                    cardBody.appendChild(yearSection);
+                                    
+                                    // Try to extract and display the actual data from the nested structure
+                                    try {
+                                        if (data.choices && data.choices[0] && data.choices[0].message) {
+                                            const content = data.choices[0].message.content;
+                                            if (content.startsWith('```json') && content.endsWith('```')) {
+                                                // Extract the JSON from the markdown code block
+                                                const jsonStr = content.substring(7, content.length - 3).trim();
+                                                const extractedData = JSON.parse(jsonStr);
+                                                
+                                                // Add the extracted data to the display
+                                                const extractedDataElement = document.createElement('div');
+                                                extractedDataElement.innerHTML = `
+                                                    <h4 class="mt-4">Extracted Data:</h4>
+                                                    <pre class="bg-dark text-light p-3 rounded" style="overflow: auto; max-height: 600px;">${JSON.stringify(extractedData, null, 2)}</pre>
+                                                `;
+                                                yearSection.appendChild(extractedDataElement);
+                                            }
                                         }
-                                    })
-                                    .catch(error => {
-                                        console.error(`Error fetching ${category} data:`, error);
-                                        const resultsContainer = document.getElementById('results-container');
-                                        resultsContainer.innerHTML = `
-                                            <div class="card-header bg-white">
-                                                <h2 class="h5 mb-0">Error</h2>
-                                            </div>
-                                            <div class="card-body">
-                                                <div class="alert alert-danger">
-                                                    Error loading ${category} data: ${error.message}
-                                                </div>
-                                            </div>
-                                        `;
-                                        
-                                        // Fall back to regular query if the direct JSON fetch fails
-                                        performRegularQuery(client, reportType, years, category);
-                                    });
-                                return; // Skip the regular query
+                                    } catch (e) {
+                                        console.error('Error extracting nested JSON:', e);
+                                    }
+                                });
+                                
+                                // Perform regular query with all years
+                                performRegularQuery(client, reportType, years, category);
                             }
                         }
-                        
-                        // Regular query for when no category is selected or PDF name couldn't be found
-                        performRegularQuery(client, reportType, years, category);
                     }
                 }
             

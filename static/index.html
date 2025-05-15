@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IR Document Explorer - Mockup</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    
+    <!-- Add these new CDN links -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+</head>
+<body class="bg-light">
+    <header class="bg-primary text-white py-4 mb-4">
+        <div class="container">
+            <h1 class="text-center">IR Document Explorer</h1>
+        </div>
+    </header>
+    
+    <div class="container">
+        <!-- Upload Section -->
+        <div class="card mb-4 shadow-sm">
+            <div class="card-header bg-white">
+                <h2 class="h5 mb-0">Upload IR Documents</h2>
+            </div>
+            <div class="card-body">
+                <!-- Updated form inputs with Bootstrap classes -->
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <label for="upload-client-input" class="form-label">Client</label>
+                        <input type="text" class="form-control" id="upload-client-input" value="mrcb" placeholder="e.g., MRCB">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="upload-report-type-input" class="form-label">Report Type</label>
+                        <input type="text" class="form-control" id="upload-report-type-input" value="annual" placeholder="e.g., Annual or Quarterly">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="upload-document-year" class="form-label">Document Year</label>
+                        <input type="text" class="form-control" id="upload-document-year" value="2024" placeholder="e.g., 2023">
+                    </div>
+                </div>
+
+                <!-- Upload area with Bootstrap styling -->
+                <div class="border rounded p-5 text-center bg-white mb-3">
+                    <i class="bi bi-file-earmark-pdf fs-1 text-primary mb-3"></i>
+                    <h5 class="mb-2">Drag & Drop PDF Files Here</h5>
+                    <p class="text-muted mb-3">or</p>
+                    <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                        <i class="bi bi-upload me-2"></i>Browse Files
+                    </button>
+                    <input type="file" id="fileInput" class="d-none" accept=".pdf" multiple>
+                </div>
+
+                <!-- Processing status -->
+                <div class="alert alert-info" id="processingStatus">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span id="statusText">Processing documents...</span>
+                        <span class="badge bg-primary rounded-pill" id="fileCount">0 files</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" id="statusBar" style="width: 0%"></div>
+                    </div>
+                    <small class="text-muted d-block mt-2" id="statusDetails">Preparing files...</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters Section -->
+        <div class="card mb-4 shadow-sm">
+            <div class="card-header bg-white">
+                <h2 class="h5 mb-0">Filters</h2>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label for="client-filter" class="form-label">Client</label>
+                        <select class="form-select" id="client-filter"></select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="report-type-filter" class="form-label">Report Type</label>
+                        <select class="form-select" id="report-type-filter"></select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Year</label>
+                        <div class="checkbox-group d-flex flex-wrap gap-2" id="year-checkboxes"></div>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="category-filter" class="form-label">Category</label>
+                        <select class="form-select" id="category-filter"></select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results-container" class="">
+            <div class="card-header bg-white">
+                <h2 class="h5 mb-0">Results</h2>
+            </div>
+            <div class="card-body" id="results-content">
+                <!-- Results will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Your existing script tag remains here -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // First load metadata from backend
+            fetch('/metadata')
+                .then(response => response.json())
+                .then(metadata => {
+                    populateFilters(metadata);
+                    initializeEventListeners();
+                })
+                .catch(error => {
+                    console.error('Error loading metadata:', error);
+                    // Fallback to static filters if API fails
+                    initializeEventListeners();
+                });
+        
+            function populateFilters(metadata) {
+                // Store the metadata globally for filter updates
+                window.metadata = metadata;
+                
+                // Initial population of client filter - select first client by default
+                const clientFilter = document.getElementById('client-filter');
+                clientFilter.innerHTML = '';  // Remove "All Clients" option
+                
+                if (metadata.clients.length > 0) {
+                    // Select first client
+                    const firstClient = metadata.clients[0];
+                    const clientOption = document.createElement('option');
+                    clientOption.value = firstClient.client_name;
+                    clientOption.textContent = firstClient.client_name;
+                    clientOption.selected = true;
+                    clientFilter.appendChild(clientOption);
+                    
+                    // Add remaining clients
+                    for (let i = 1; i < metadata.clients.length; i++) {
+                        const option = document.createElement('option');
+                        option.value = metadata.clients[i].client_name;
+                        option.textContent = metadata.clients[i].client_name;
+                        clientFilter.appendChild(option);
+                    }
+                }
+
+                // Add event listener for client filter changes
+                clientFilter.addEventListener('change', function() {
+                    updateReportTypeFilter();
+                    updateYearCheckboxes();
+                    updateCategoryFilter();
+                    fetchQueryResults(); // Add this line
+                });
+
+                // Initial population of all filters
+                updateReportTypeFilter();
+                updateYearCheckboxes();
+                updateCategoryFilter();
+            }
+
+            function updateReportTypeFilter() {
+                const clientFilter = document.getElementById('client-filter');
+                const reportTypeFilter = document.getElementById('report-type-filter');
+                const selectedClient = clientFilter.value;
+                
+                reportTypeFilter.innerHTML = '';  // Remove "All Report Types" option
+                
+                if (selectedClient) {
+                    const client = window.metadata.clients.find(c => c.client_name === selectedClient);
+                    if (client) {
+                        const reportTypes = Object.keys(client.report_types).sort();
+                        
+                        // Select first report type if available
+                        if (reportTypes.length > 0) {
+                            const firstReportType = reportTypes[0];
+                            const reportTypeOption = document.createElement('option');
+                            reportTypeOption.value = firstReportType;
+                            reportTypeOption.textContent = firstReportType.charAt(0).toUpperCase() + firstReportType.slice(1);
+                            reportTypeOption.selected = true;
+                            reportTypeFilter.appendChild(reportTypeOption);
+                            
+                            // Add remaining report types
+                            for (let i = 1; i < reportTypes.length; i++) {
+                                const option = document.createElement('option');
+                                option.value = reportTypes[i];
+                                option.textContent = reportTypes[i].charAt(0).toUpperCase() + reportTypes[i].slice(1);
+                                reportTypeFilter.appendChild(option);
+                            }
+                        }
+                    }
+                }
+            }
+        
+            function updateYearCheckboxes() {
+                const clientFilter = document.getElementById('client-filter');
+                const reportTypeFilter = document.getElementById('report-type-filter');
+                const yearCheckboxGroup = document.querySelector('.checkbox-group');
+                const selectedClient = clientFilter.value;
+                const selectedReportType = reportTypeFilter.value;
+                
+                yearCheckboxGroup.innerHTML = '';
+                
+                const years = new Set();
+                
+                if (!selectedClient && !selectedReportType) {
+                    // Show all years if no filters selected
+                    window.metadata.clients.forEach(client => {
+                        Object.values(client.report_types).forEach(report => {
+                            Object.keys(report.years).forEach(year => {
+                                years.add(year);
+                            });
+                        });
+                    });
+                } else if (selectedClient && !selectedReportType) {
+                    // Show years for selected client only
+                    const client = window.metadata.clients.find(c => c.client_name === selectedClient);
+                    if (client) {
+                        Object.values(client.report_types).forEach(report => {
+                            Object.keys(report.years).forEach(year => {
+                                years.add(year);
+                            });
+                        });
+                    }
+                } else if (selectedClient && selectedReportType) {
+                    // Show years for selected client and report type
+                    const client = window.metadata.clients.find(c => c.client_name === selectedClient);
+                    if (client && client.report_types[selectedReportType]) {
+                        Object.keys(client.report_types[selectedReportType].years).forEach(year => {
+                            years.add(year);
+                        });
+                    }
+                }
+                
+                // Sort years in descending order and create checkboxes
+                Array.from(years).sort((a, b) => b - a).forEach((year, index) => {
+                    const label = document.createElement('label');
+                    label.className = 'checkbox-label';
+                    
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.name = 'year';
+                    checkbox.value = year;
+                    if (index === 0) {  // Select latest year by default
+                        checkbox.checked = true;
+                    }
+                    
+                    label.appendChild(checkbox);
+                    label.appendChild(document.createTextNode(' ' + year));
+                    yearCheckboxGroup.appendChild(label);
+                });
+            }
+        
+            function updateCategoryFilter() {
+                const clientFilter = document.getElementById('client-filter');
+                const reportTypeFilter = document.getElementById('report-type-filter');
+                const categoryFilter = document.getElementById('category-filter');
+                const selectedClient = clientFilter.value;
+                const selectedReportType = reportTypeFilter.value;
+                const selectedYears = Array.from(document.querySelectorAll('.checkbox-group input[name="year"]:checked')).map(el => el.value);
+                
+                categoryFilter.innerHTML = '<option value="">All Categories</option>';
+                
+                const categories = new Set();
+                
+                // Helper function to add categories from a specific year data
+                const addCategoriesFromYearData = (yearData) => {
+                    Object.values(yearData).forEach(fileData => {
+                        if (fileData.category) {
+                            Object.keys(fileData.category).forEach(category => {
+                                categories.add(category);
+                            });
+                        }
+                    });
+                };
+                
+                if (!selectedClient && !selectedReportType && selectedYears.length === 0) {
+                    // Show all categories if no filters selected
+                    window.metadata.clients.forEach(client => {
+                        Object.values(client.report_types).forEach(report => {
+                            Object.values(report.years).forEach(yearData => {
+                                addCategoriesFromYearData(yearData);
+                            });
+                        });
+                    });
+                } else {
+                    // Filter based on selections
+                    window.metadata.clients.forEach(client => {
+                        if (selectedClient && client.client_name !== selectedClient) return;
+                        
+                        Object.entries(client.report_types).forEach(([reportType, report]) => {
+                            if (selectedReportType && reportType !== selectedReportType) return;
+                            
+                            Object.entries(report.years).forEach(([year, yearData]) => {
+                                if (selectedYears.length === 0) return;  // Don't show categories if no years selected
+                                if (!selectedYears.includes(year)) return;
+                                
+                                addCategoriesFromYearData(yearData);
+                            });
+                        });
+                    });
+                }
+                
+                // Populate category filter
+                categories.forEach(category => {
+                    const option = document.createElement('option');
+                    option.value = category;
+                    option.textContent = category.split('_').map(word => 
+                        word.charAt(0).toUpperCase() + word.slice(1)
+                    ).join(' ');
+                    categoryFilter.appendChild(option);
+                });
+            }
+        
+            function initializeEventListeners() {
+                // Add these event listeners to update categories when filters change
+                document.getElementById('client-filter').addEventListener('change', function() {
+                    updateReportTypeFilter();
+                    updateYearCheckboxes();
+                    updateCategoryFilter();
+                    fetchQueryResults(); // Add this line
+                });
+            
+                document.getElementById('report-type-filter').addEventListener('change', function() {
+                    updateYearCheckboxes();
+                    updateCategoryFilter();
+                    fetchQueryResults(); // Add this line
+                });
+            
+                // Add this event listener for year checkbox changes
+                document.querySelector('.checkbox-group').addEventListener('change', function() {
+                    updateCategoryFilter();
+                    fetchQueryResults(); // Add this line
+                });
+
+                // Add this to your initializeEventListeners function
+                {
+                    // ... existing event listeners ...
+
+                    // File upload handling
+                    const fileInput = document.getElementById('fileInput');
+                    const uploadArea = document.querySelector('.border.rounded.p-5.text-center');
+                    const processingStatus = document.getElementById('processingStatus');
+                    
+                    // Handle drag and drop
+                    uploadArea.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        uploadArea.classList.add('border-primary');
+                    });
+                
+                    uploadArea.addEventListener('dragleave', () => {
+                        uploadArea.classList.remove('border-primary');
+                    });
+                
+                    uploadArea.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        uploadArea.classList.remove('border-primary');
+                        if (e.dataTransfer.files.length > 0) {
+                            fileInput.files = e.dataTransfer.files;
+                            handleFileUpload();
+                        }
+                    });
+                
+                    // Handle file input change
+                    fileInput.addEventListener('change', handleFileUpload);
+                
+                    function handleFileUpload() {
+                        const files = fileInput.files;
+                        if (!files || files.length === 0) return;
+                    
+                        processingStatus.style.display = 'block';
+                        document.getElementById('statusText').textContent = 'Processing documents...';
+                        document.getElementById('fileCount').textContent = `${files.length} files`;
+                        document.getElementById('statusBar').style.width = '0%';
+                        document.getElementById('statusDetails').textContent = 'Preparing files...';
+                    
+                        const formData = new FormData();
+                        formData.append('client', document.getElementById('upload-client-input').value);
+                        formData.append('report_type', document.getElementById('upload-report-type-input').value);
+                        formData.append('year', document.getElementById('upload-document-year').value);
+                        
+                        for (let i = 0; i < files.length; i++) {
+                            formData.append('pdf_files', files[i]);
+                        }
+                    
+                        fetch('/upload-and-process-pdfs', {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.message) {
+                                document.getElementById('statusText').textContent = data.message;
+                            }
+                            if (data.uploaded_files) {
+                                document.getElementById('statusDetails').textContent = 
+                                    `Successfully processed ${data.uploaded_files.length} files`;
+                                document.getElementById('statusBar').style.width = '100%';
+                            }
+                            if (data.errors && data.errors.length > 0) {
+                                console.error('Upload errors:', data.errors);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Upload error:', error);
+                            document.getElementById('statusText').textContent = 'Upload failed';
+                            document.getElementById('statusDetails').textContent = error.message;
+                        });
+                    }
+                }
+            
+                document.getElementById('category-filter').addEventListener('change', function() {
+                    fetchQueryResults();
+                });
+            
+                fetchQueryResults();
+            
+                // Add new function to fetch query results
+                function fetchQueryResults() {
+                    const client = document.getElementById('client-filter').value;
+                    const reportType = document.getElementById('report-type-filter').value;
+                    const yearCheckboxes = Array.from(document.querySelectorAll('.checkbox-group input[name="year"]:checked'));
+                    const years = yearCheckboxes.map(checkbox => checkbox.value);
+                    const category = document.getElementById('category-filter').value; // Get selected category
+            
+                    if (client && reportType && years.length > 0) {
+                        const requestData = {
+                            client: client,
+                            report_type: reportType,
+                            years: years,
+                            categories: category ? [category] : [] // Include category if selected
+                        };
+            
+                        fetch('/query-results', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify(requestData)
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            console.log('Query results:', data);
+                            displayQueryResults(data);
+                        })
+                        .catch(error => {
+                            console.error('Error fetching query results:', error);
+                        });
+                    }
+                }
+            
+                function displayQueryResults(data) {
+                    const resultsContainer = document.getElementById('results-container');
+                    if (!resultsContainer) {
+                        console.error('Results container not found');
+                        return;
+                    }
+
+                    // Clear previous results
+                    resultsContainer.innerHTML = '';
+
+                    const selectedCategory = document.getElementById('category-filter').value;
+                    const categoryTitle = selectedCategory ? 
+                        `Filtered by: ${selectedCategory.split('_').map(word => 
+                            word.charAt(0).toUpperCase() + word.slice(1)
+                        ).join(' ')}` : 
+                        'Showing all categories';
+
+                    if (data && data.results && data.results.length > 0) {
+                        // Filter results to only include those with categories
+                        const filteredResults = data.results.filter(result => 
+                            result.content_json && 
+                            result.content_json.categories && 
+                            result.content_json.categories.length > 0
+                        );
+
+                        if (filteredResults.length === 0) {
+                            resultsContainer.innerHTML = '<div class="no-results">No categorized results found</div>';
+                            return;
+                        }
+
+                        // Create a container for the results list
+                        const listContainer = document.createElement('div');
+                        listContainer.className = 'results-list';
+
+                        // Add count display
+                        const countDisplay = document.createElement('div');
+                        countDisplay.className = 'results-count card';
+                        countDisplay.innerHTML = `
+                            <div>Found ${filteredResults.length} results</div>
+                            <div class="filter-info">${categoryTitle}</div>
+                        `;
+                        resultsContainer.appendChild(countDisplay);
+
+                        // Process each filtered result
+                        filteredResults.forEach(result => {
+                            const resultItem = document.createElement('div');
+                            resultItem.className = 'result-item';
+
+                            // Client and basic info
+                            const header = document.createElement('div');
+                            header.className = 'result-header';
+                            header.innerHTML = `
+                                <h3>${result.client} - ${result.report_type} (${result.year})</h3>
+                                <div class="file-info">${result.filename} - Page ${result.page}</div>
+                            `;
+                            resultItem.appendChild(header);
+
+                            // Categories section - now guaranteed to exist
+                            const categoriesSection = document.createElement('div');
+                            categoriesSection.className = 'categories-section';
+
+                            // In displayQueryResults function, modify the category item creation:
+                            result.content_json.categories.forEach(category => {
+                                const categoryItem = document.createElement('div');
+                                categoryItem.className = 'category-item';
+                                
+                                const categoryHeader = document.createElement('div');
+                                categoryHeader.className = 'category-header';
+                                categoryHeader.textContent = category.name.split('_').map(word => 
+                                    word.charAt(0).toUpperCase() + word.slice(1)
+                                ).join(' ');
+                                
+                                const categoryContent = document.createElement('div');
+                                categoryContent.className = 'category-content';
+                                
+                                // Add confidence score if available
+                                if (category.confidence && false) {
+                                    const confidenceDiv = document.createElement('div');
+                                    confidenceDiv.className = 'confidence-score';
+                                    confidenceDiv.textContent = `Confidence: ${(category.confidence * 100).toFixed(1)}%`;
+                                    categoryContent.appendChild(confidenceDiv);
+                                }
+                                
+                                // Add text content if available
+                                if (category.content?.text) {
+                                    const textDiv = document.createElement('div');
+                                    textDiv.className = 'category-text';
+                                    
+                                    // Add title element
+                                    const title = document.createElement('h4');
+                                    title.textContent = 'Analysis'; // You can customize this title
+                                    textDiv.appendChild(title);
+                                    
+                                    // Add parsed markdown content
+                                    textDiv.innerHTML += marked.parse(category.content.text);
+                                    
+                                    categoryContent.appendChild(textDiv);
+                                    
+                                    // Apply syntax highlighting after content is added
+                                    setTimeout(() => {
+                                        textDiv.querySelectorAll('pre code').forEach((block) => {
+                                            hljs.highlightElement(block);
+                                        });
+                                    }, 0);
+                                }
+                                
+                               
+                                
+                                // Add key figures if available
+                                if (category.content?.key_figures?.length > 0) {
+                                    const keyFiguresDiv = document.createElement('div');
+                                    keyFiguresDiv.className = 'key-figures';
+                                    keyFiguresDiv.innerHTML = '<h4>Key Figures:</h4>';
+                                    
+                                    const keyFiguresTable = document.createElement('table');
+                                    keyFiguresTable.className = 'key-figures-table';
+                                    
+                                    // Create header
+                                    const headerRow = document.createElement('tr');
+                                    ['Label', 'Value', 'Unit', 'Year'].forEach(col => {
+                                        const th = document.createElement('th');
+                                        th.textContent = col;
+                                        headerRow.appendChild(th);
+                                    });
+                                    keyFiguresTable.appendChild(headerRow);
+                                    
+                                    // Add rows
+                                    category.content.key_figures.forEach(figure => {
+                                        const row = document.createElement('tr');
+                                        [figure.label, figure.value, figure.unit, figure.year].forEach(val => {
+                                            const td = document.createElement('td');
+                                            td.textContent = val || '-';
+                                            row.appendChild(td);
+                                        });
+                                        keyFiguresTable.appendChild(row);
+                                    });
+                                    
+                                    keyFiguresDiv.appendChild(keyFiguresTable);
+                                    categoryContent.appendChild(keyFiguresDiv);
+                                }
+                                
+                                // Add tables if available
+                                if (category.content?.tables?.length > 0) {
+                                    const tablesDiv = document.createElement('div');
+                                    tablesDiv.className = 'tables-container';
+                                    tablesDiv.innerHTML = '<h4>Tables:</h4>';
+                                    
+                                    category.content.tables.forEach(table => {
+                                        const tableContainer = document.createElement('div');
+                                        tableContainer.className = 'table-wrapper';
+                                        
+                                        if (table.title) {
+                                            const titleDiv = document.createElement('h5');
+                                            titleDiv.textContent = table.title;
+                                            tableContainer.appendChild(titleDiv);
+                                        }
+                                        
+                                        const tableEl = document.createElement('table');
+                                        tableEl.className = 'data-table';
+                                        
+                                        // Create header
+                                        if (table.headers?.length > 0) {
+                                            const headerRow = document.createElement('tr');
+                                            table.headers.forEach(header => {
+                                                const th = document.createElement('th');
+                                                th.textContent = header;
+                                                headerRow.appendChild(th);
+                                            });
+                                            tableEl.appendChild(headerRow);
+                                        }
+                                        
+                                        // Add rows
+                                        if (table.rows?.length > 0) {
+                                            table.rows.forEach(rowData => {
+                                                const row = document.createElement('tr');
+                                                rowData.forEach(cellData => {
+                                                    const td = document.createElement('td');
+                                                    td.textContent = cellData;
+                                                    row.appendChild(td);
+                                                });
+                                                tableEl.appendChild(row);
+                                            });
+                                        }
+                                        
+                                        tableContainer.appendChild(tableEl);
+                                        tablesDiv.appendChild(tableContainer);
+                                    });
+                                    
+                                    categoryContent.appendChild(tablesDiv);
+                                }
+
+                                 // Add raw text if available
+                                 if (category.content?.raw_text) {
+                                    const rawTextDiv = document.createElement('div');
+                                    rawTextDiv.className = 'raw-text';
+                                    rawTextDiv.innerHTML = `<h4>Raw Text:</h4><p>${category.content.raw_text}</p>`;
+                                    categoryContent.appendChild(rawTextDiv);
+                                }
+                                
+                                categoryItem.appendChild(categoryHeader);
+                                categoryItem.appendChild(categoryContent);
+                                categoriesSection.appendChild(categoryItem);
+                            });
+
+                            resultItem.appendChild(categoriesSection);
+
+                            // In displayQueryResults function, replace the links section creation with:
+                            const linksSection = document.createElement('div');
+                            linksSection.className = 'links-section';
+                            
+                            // Construct paths from result data
+                            // Replace this line:
+                          //  const pngPath = `${result.client}/${result.report_type}/${result.year}/${result.filename.replace('.pdf', '')}_page_${result.page}.jpg`;
+                            
+                            // With this new version that includes the filename subdirectory:
+                            const pngPath = `${result.client}/${result.report_type}/${result.year}/${result.filename.replace('.pdf', '')}/${result.filename.replace('.pdf', '')}_page_${result.page}.jpg`;
+                            const pdfPath = `${result.client}/${result.report_type}/${result.year}/${result.filename}.pdf`;
+                            
+                            // Add view links
+                            const pngLink = document.createElement('a');
+                            pngLink.href = `/extracts/${pngPath}`;
+                            pngLink.target = '_blank';
+                            pngLink.className = 'view-link';
+                            pngLink.textContent = 'View Page Image';
+                            linksSection.appendChild(pngLink);
+                            
+                            const pdfLink = document.createElement('a');
+                            pdfLink.href = `/uploads/${pdfPath}#page=${result.page}`;
+                            pdfLink.target = '_blank';
+                            pdfLink.className = 'view-link';
+                            pdfLink.textContent = 'View PDF Page';
+                            linksSection.appendChild(pdfLink);
+
+                            // Add view raw JSON button
+                            const viewJsonBtn = document.createElement('button');
+                            viewJsonBtn.className = 'view-json-btn';
+                            viewJsonBtn.textContent = 'View Raw JSON';
+                            viewJsonBtn.onclick = function() {
+                                const jsonDisplay = document.createElement('pre');
+                                jsonDisplay.className = 'raw-json-display';
+                                jsonDisplay.textContent = JSON.stringify(result.content_json, null, 2);
+                                
+                                // Toggle display
+                                if (this.nextElementSibling && this.nextElementSibling.className === 'raw-json-display') {
+                                    this.nextElementSibling.remove();
+                                    this.textContent = 'View Raw JSON';
+                                } else {
+                                    this.parentNode.insertBefore(jsonDisplay, this.nextElementSibling);
+                                    this.textContent = 'Hide Raw JSON';
+                                }
+                            };
+                            linksSection.appendChild(viewJsonBtn);
+                            
+                            resultItem.appendChild(linksSection);
+
+                            listContainer.appendChild(resultItem);
+                        });
+
+                        resultsContainer.appendChild(listContainer);
+                    } else {
+                        resultsContainer.innerHTML = '<div class="no-results">No results found</div>';
+                    }
+                }
+            }
+        });
+    </script>
+    <div id="results-container" class="results-container container"></div>
+</body>
+</html>

@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>IR AI</title>
+    <!-- Add Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Add Bootstrap JS and dependencies -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.3/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 40px;
+        }
+        #forms-container {
+            padding-right: 20px;
+        }
+        #response-container {
+            position: sticky;
+            top: 20px;
+            height: fit-content;
+        }
+        .response { 
+            background: #f4f4f4; 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin-top: 0;
+        }
+        .ranked { margin-bottom: 10px; }
+        label, input, button { font-size: 1rem; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 6px; }
+        button { padding: 6px 16px; }
+        /* Optional: style for code blocks */
+        pre code { display: block; padding: 1em; background: #272822; color: #f8f8f2; border-radius: 6px; }
+        /* Spinner styles */
+        .spinner {
+            display: block;
+            margin: 20px auto 10px auto;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #ccc;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg);}
+            100% { transform: rotate(360deg);}
+        }
+        .loading-message {
+            text-align: center;
+            font-size: 1.1em;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .status-success {
+            color: #28a745;
+            margin-left: 20px;
+        }
+        .status-error {
+            color: #dc3545;
+            margin-left: 20px;
+        }
+        .status-info {
+            color: #17a2b8;
+            margin-left: 20px;
+            font-size: 0.9em;
+        }
+        .status-complete {
+            color: #28a745;
+            font-weight: bold;
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+    </style>
+    <!-- Add highlight.js and marked.js -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
+</head>
+<body>
+    <div class="container">
+        <div class="row">
+            <div id="forms-container" class="col-md-6">
+                <div id="chat-box">
+                    <h2>IR AI</h2>
+                    
+                    <!-- Search Form -->
+                    <form id="search-form" class="mb-4">
+                        <div class="form-group">
+                            <label for="client">Client:</label>
+                            <select id="client" name="client" class="form-control" required>
+                                <option value="">Loading clients...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="category">Category:</label>
+                            <select id="category" name="category" class="form-control" required disabled>
+                                <option value="">Select client first</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="year">Year (optional):</label>
+                            <select id="year" name="year" class="form-control" disabled>
+                                <option value="">Select category first</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="question-type">Question Type:</label>
+                            <select id="question-type" name="question-type" class="form-control">
+                                <option value="default">Default</option>
+                                <option value="financial-highlight">Financial Highlight</option>
+                                <option value="revenue">Revenue</option>
+                                <option value="corporate-directory">Corporate Directory</option>
+                                <option value="shareholdings">Shareholdings</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="question">Your question:</label>
+                            <textarea id="question" name="question" class="form-control" required></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="assistant-text">Assistant Text:</label>
+                            <textarea id="assistant-text" name="assistant-text" class="form-control" required>You are a helpful assistant.</textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="top_k">Number of results (top_k):</label>
+                            <input type="number" id="top_k" name="top_k" class="form-control" value="45" min="1" max="100">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Search</button>
+                    </form>
+                
+                    <!-- Add separator -->
+                    <hr class="my-4">
+            
+                    <!-- Upload Form -->
+                    <form id="upload-form">
+                        <h3>Upload New Document</h3>
+                        <div class="form-group">
+                            <label for="pdf-upload">PDF File:</label>
+                            <input type="file" id="pdf-upload" name="pdf-upload" class="form-control" accept=".pdf" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="client-upload">Client:</label>
+                            <input type="text" id="client-upload" name="client-upload" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="category-upload">Category:</label>
+                            <input type="text" id="category-upload" name="category-upload" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="year-upload">Year:</label>
+                            <input type="text" id="year-upload" name="year-upload" class="form-control" required>
+                        </div>
+                        <button type="submit" class="btn btn-success">Upload</button>
+                    </form>
+                </div>
+            </div>
+
+            <div id="response-container" class="col-md-6">
+                <div id="result" class="response" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // Configure marked to use highlight.js
+        marked.setOptions({
+            highlight: function(code, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    return hljs.highlight(code, { language: lang }).value;
+                }
+                return hljs.highlightAuto(code).value;
+            }
+        });
+
+        async function streamQwenResponse(question, top_k, client, category, year, assistantText, resultDiv) {
+            // Create containers if they don't exist
+            if (!document.getElementById('qwen-response-container')) {
+                resultDiv.innerHTML += `
+                    <div id="qwen-response-container"></div>
+                    <div id="search-results-container"></div>
+                `;
+            }
+            
+            // Add loading indicator at the top
+            const loadingDiv = document.createElement('div');
+            loadingDiv.innerHTML = `
+                <div class="spinner"></div>
+                <div class="loading-message">Searching and streaming results...</div>
+            `;
+            resultDiv.insertBefore(loadingDiv, resultDiv.firstChild);
+            
+            const response = await fetch('/chat/stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    question, 
+                    top_k, 
+                    client, 
+                    category,
+                    year: year || null,
+                    assistantText
+                })
+            });
+            
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let qwenText = '';
+            let done = false;
+            let firstCharReceived = false;
+            
+            while (!done) {
+                const { value, done: doneReading } = await reader.read();
+                done = doneReading;
+                if (value) {
+                    const chunk = decoder.decode(value, { stream: true });
+                    
+                    // Handle search results if they come first
+                    if (chunk.startsWith('SEARCH_RESULTS:')) {
+                        const resultsJson = chunk.split('SEARCH_RESULTS:')[1].split('\n\n')[0];
+                        const searchData = JSON.parse(resultsJson);
+                        
+                        let resultsHtml = `<div class="search-results"><h3>Top ${searchData.length} Search Results:</h3>`;
+                        searchData.forEach(result => {
+                            resultsHtml += `
+                                <div class="search-result">
+                                    <p><strong>Rank ${result.rank}</strong> (Page ${result.page})</p>
+                                    <p><small>Source: ${result.client || 'N/A'} - ${result.category || 'N/A'} - ${result.year || 'N/A'} - ${result.filename || 'N/A'}</small></p>
+                                    <div class="result-text">${marked.parse(result.text)}</div>
+                                </div>
+                                <hr>
+                            `;
+                        });
+                        resultsHtml += `</div>`;
+                        document.getElementById('search-results-container').innerHTML = resultsHtml;
+                        continue;
+                    }
+                    
+                    qwenText += chunk;
+                    
+                    // Remove loading message on first character
+                    if (!firstCharReceived && qwenText.trim().length > 0) {
+                        document.querySelector('.loading-message').style.display = 'none';
+                        firstCharReceived = true;
+                    }
+                    
+                    document.getElementById('qwen-response-container').innerHTML = `
+                        <h3>Qwen Response:</h3>
+                        <div>${marked.parse(qwenText)}</div>
+                    `;
+                }
+            }
+            
+            // Remove loading when done
+            loadingDiv.remove();
+        }
+
+        document.getElementById('search-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            // Scroll to the top of the page
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            const question = document.getElementById('question').value;
+            const top_k = document.getElementById('top_k').value;
+            const client = document.getElementById('client').value;
+            const category = document.getElementById('category').value;
+            const year = document.getElementById('year').value;
+            const resultDiv = document.getElementById('result');
+            const assistantText = document.getElementById('assistant-text').value; // Get the assistant text
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '';
+            
+            await new Promise(resolve => setTimeout(resolve, 400));
+            await streamQwenResponse(question, top_k, client, category, year, assistantText, resultDiv);
+        });
+
+        document.getElementById('upload-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            // Scroll to the top of the page
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            const fileInput = document.getElementById('pdf-upload');
+            const client = document.getElementById('client-upload').value;
+            const category = document.getElementById('category-upload').value;
+            const year = document.getElementById('year-upload').value;
+            const resultDiv = document.getElementById('result');
+        
+            if (!fileInput.files.length) {
+                alert('Please select a PDF file');
+                return;
+            }
+        
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div class="spinner"></div>
+                <div class="loading-message">Uploading and processing document...</div>
+                <div id="upload-status"></div>
+            `;
+        
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('client', client);
+            formData.append('category', category);
+            formData.append('year', year);
+        
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+        
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let uploadStatus = '';
+        
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+        
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n').filter(line => line.trim());
+        
+                    for (const line of lines) {
+                        if (line.startsWith('STAGE:')) {
+                            uploadStatus += `<h3>${line.replace('STAGE:', '')}</h3>`;
+                        } 
+                        else if (line.startsWith('STATUS:')) {
+                            uploadStatus += `<p class="status-success">✓ ${line.replace('STATUS:', '')}</p>`;
+                        }
+                        else if (line.startsWith('PROCESS:')) {
+                            uploadStatus += `<p class="status-info">${line.replace('PROCESS:', '')}</p>`;
+                        }
+                        else if (line.startsWith('INDEX:')) {
+                            uploadStatus += `<p class="status-info">${line.replace('INDEX:', '')}</p>`;
+                        }
+                        else if (line.startsWith('ERROR:')) {
+                            uploadStatus += `<p class="status-error">✗ ${line.replace('ERROR:', '')}</p>`;
+                        }
+                        else if (line.startsWith('COMPLETE:')) {
+                            uploadStatus += `<div class="status-complete">${line.replace('COMPLETE:', '')}</div>`;
+                            // Remove loading spinner and message
+                            document.querySelector('.spinner').remove();
+                            document.querySelector('.loading-message').remove();
+                            // Refresh directory options after successful upload
+                            loadDirectoryOptions();
+                            // Clear form
+                            this.reset();
+                        }
+        
+                        document.getElementById('upload-status').innerHTML = uploadStatus;
+                        resultDiv.scrollTop = resultDiv.scrollHeight;
+                    }
+                }
+            } catch (error) {
+                // Remove loading spinner and message on error
+                document.querySelector('.spinner')?.remove();
+                document.querySelector('.loading-message')?.remove();
+                document.getElementById('upload-status').innerHTML += 
+                    `<p class="status-error">Upload failed: ${error.message}</p>`;
+            }
+        });
+
+        // Add this function to scan directories
+        async function loadDirectoryOptions() {
+            try {
+                // Fetch available clients
+                const clientsRes = await fetch('/api/directory/clients');
+                const clients = await clientsRes.json();
+                const clientSelect = document.getElementById('client');
+                
+                clientSelect.innerHTML = '<option value="">Select client</option>';
+                clients.forEach(client => {
+                    clientSelect.innerHTML += `<option value="${client}">${client}</option>`;
+                });
+
+                // Set up client change listener
+                clientSelect.addEventListener('change', async function() {
+                    const categorySelect = document.getElementById('category');
+                    const yearSelect = document.getElementById('year');
+                    
+                    if (!this.value) {
+                        categorySelect.innerHTML = '<option value="">Select client first</option>';
+                        categorySelect.disabled = true;
+                        yearSelect.innerHTML = '<option value="">Select category first</option>';
+                        yearSelect.disabled = true;
+                        return;
+                    }
+
+                    // Fetch categories for selected client
+                    const categoriesRes = await fetch(`/api/directory/categories?client=${this.value}`);
+                    const categories = await categoriesRes.json();
+                    
+                    categorySelect.innerHTML = '<option value="">Select category</option>';
+                    categories.forEach(cat => {
+                        categorySelect.innerHTML += `<option value="${cat}">${cat}</option>`;
+                    });
+                    categorySelect.disabled = false;
+                    yearSelect.innerHTML = '<option value="">Select category first</option>';
+                    yearSelect.disabled = true;
+                });
+
+                // Set up category change listener
+                document.getElementById('category').addEventListener('change', async function() {
+                    const yearSelect = document.getElementById('year');
+                    const client = document.getElementById('client').value;
+                    
+                    if (!this.value || !client) {
+                        yearSelect.innerHTML = '<option value="">Select category first</option>';
+                        yearSelect.disabled = true;
+                        return;
+                    }
+
+                    // Fetch years for selected client and category
+                    const yearsRes = await fetch(`/api/directory/years?client=${client}&category=${this.value}`);
+                    const years = await yearsRes.json();
+                    
+                    yearSelect.innerHTML = '<option value="">All years</option>';
+                    years.forEach(year => {
+                        yearSelect.innerHTML += `<option value="${year}">${year}</option>`;
+                    });
+                    yearSelect.disabled = false;
+                });
+
+            } catch (error) {
+                console.error('Error loading directory options:', error);
+            }
+        }
+
+        // Call this when page loads
+        document.addEventListener('DOMContentLoaded', loadDirectoryOptions);
+
+       
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('question').addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = (this.scrollHeight) + 'px';
+            });
+
+            document.getElementById('assistant-text').addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = (this.scrollHeight) + 'px';
+            });
+
+            // Add event listener for question type selection
+            document.getElementById('question-type').addEventListener('change', function() {
+                const questionField = document.getElementById('question');
+                const assistantTextField = document.getElementById('assistant-text');
+
+                if (this.value === 'financial-highlight') {
+                    questionField.value = `Financial Highlight from table`;
+                    assistantTextField.value = `You are a helpful assistant. Please return the revenue data in JSON format with the following structure:
+Sample JSON format:
+{
+    "years": ["2023", "2022"],
+    "data": {
+        "Revenue": {"2023": revenueValue2023, "2022": revenueValue2022},
+        "ProfitLossBeforeTax": {"2023": profitLossBeforeTaxValue2023, "2022": profitLossBeforeTaxValue2022},
+        "EarningsLoss": {"2023": earningsLossValue2023, "2022": earningsLossValue2022},
+        "EarningsLossPerShare": {"2023": earningsLossPerShareValue2023, "2022": earningsLossPerShareValue2022},
+        "ShareholdersFunds": {"2023": shareholdersFundsValue2023, "2022": shareholdersFundsValue2022},
+        "TotalAssets": {"2023": totalAssetsValue2023, "2022": totalAssetsValue2022},
+        "BankBorrowings": {"2023": bankBorrowingsValue2023, "2022": bankBorrowingsValue2022},
+        "ReturnOnAverageShareholdersFunds": {"2023": returnOnAverageShareholdersFundsValue2023, "2022": returnOnAverageShareholdersFundsValue2022}
+    }
+}
+Ensure that the data is accurate and formatted correctly.
+Preferably from the Group data; use Company data only if Group data is unavailable.
+No need explaination`;
+                } else if (this.value === 'revenue') {
+                    questionField.value = 'Revenue';
+                    assistantTextField.value = `You are a helpful assistant. Please return the revenue data in JSON format with the following structure:
+{
+    "years": ["Year1", "Year2", "Year3", ...],
+    "revenue": [Revenue1, Revenue2, Revenue3, ...]
+}
+Ensure that the data is accurate and formatted correctly.
+No need explaination.`;
+} else if (this.value === 'corporate-directory') {
+                    questionField.value = 'Corporate Directory Only';
+                    assistantTextField.value = `You are a helpful assistant.`;
+                } else if (this.value === 'shareholdings') {
+                    questionField.value = 'Shareholdings Only';
+                    assistantTextField.value = `You are a helpful assistant.`;
+                } else {
+                    questionField.value = '';
+                    assistantTextField.value = 'You are a helpful assistant.';
+                }
+
+                // Adjust height dynamically
+                questionField.style.height = 'auto';
+                questionField.style.height = (questionField.scrollHeight) + 'px';
+                assistantTextField.style.height = 'auto';
+                assistantTextField.style.height = (assistantTextField.scrollHeight) + 'px';
+            });
+        });
+
+    </script>
+</body>
+</html>
